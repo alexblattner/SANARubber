@@ -5,7 +5,7 @@ This project aims to solve the rigidity problem that diffusers has. Instead of c
 There's a special parameter in this pipeline called "stop_step". It's the exact step you want the denoising to stop at.
 How to use
 1. install diffusers: pip install git+https://github.com/huggingface/diffusers
-2. run examples.py
+2. run tester.py
 3. choose whatever appliers you want, but warning, some appliers should be applied later if you're stacking them like promptFusion. Also, if you use inpainting, you can't use img2img
 
 or copy this (change whatever you want, it works just like diffusers)

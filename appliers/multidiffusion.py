@@ -29,16 +29,16 @@ def find_index(functions, name):
 
 def apply_multiDiffusion(pipe):
     # Replace determine_batch_size_fn with the multidiffusion version.
-    idx = find_index(pipe.pipeline_functions, "determine_batch_size_fn")
+    idx00 = find_index(pipe.pipeline_functions, "determine_batch_size_fn")
     pipe.inner_determine_batch_size_multiDiffusion = pipe.determine_batch_size_fn
     pipe.determine_batch_size_fn = partial(determine_batch_size, pipe)
-    pipe.pipeline_functions[idx] = pipe.determine_batch_size_fn
+    pipe.pipeline_functions[idx00] = pipe.determine_batch_size_fn
 
     # Replace encode_prompt_fn with the multidiffusion version.
-    idx = find_index(pipe.pipeline_functions, "encode_prompt_fn")
+    idx0 = find_index(pipe.pipeline_functions, "encode_prompt_fn")
     pipe.inner_encode_prompt_multiDiffusion = pipe.encode_prompt_fn
     pipe.encode_prompt_fn = partial(encode_prompt, pipe)
-    pipe.pipeline_functions[idx] = pipe.encode_prompt_fn
+    pipe.pipeline_functions[idx0] = pipe.encode_prompt_fn
 
     # Insert mask preparation before the denoising loop.
     idx = find_index(pipe.pipeline_functions, "denoising_loop_fn")
@@ -48,29 +48,31 @@ def apply_multiDiffusion(pipe):
     si = find_index(pipe.step_functions, "get_noise_pred")
     ei = find_index(pipe.step_functions, "step_scheduler")
     pipe.multiDiffusionFunctions = [pipe.step_functions.pop(si) for _ in range(ei - si)]
-    pipe.inner_get_noise_pred_multiDiffusion = pipe.get_noise_pred
-    pipe.get_noise_pred = partial(get_noise_pred_multidiffusion, pipe)
-    pipe.step_functions.insert(si, pipe.get_noise_pred)
-    
+    pipe.inner_get_noise_pred_multiDiffusion = partial(get_noise_pred_multidiffusion, pipe)
+    pipe.step_functions.insert(si, pipe.inner_get_noise_pred_multiDiffusion)
+
     # Define a remover function to restore the original behavior.
     def remover_multiDiffusion():
         pipe.step_functions.pop(si)
-        pipe.get_noise_pred = pipe.inner_get_noise_pred_multiDiffusion
+        delattr(pipe, f"inner_get_noise_pred_multiDiffusion")
+        
         for f in reversed(pipe.multiDiffusionFunctions):
             pipe.step_functions.insert(si, f)
-        del pipe.multiDiffusionFunctions
+        delattr(pipe, f"multiDiffusionFunctions")
         
-        idx_mask = find_index(pipe.pipeline_functions, "mask_prepare_multiDiffusion")
-        if idx_mask is not None:
-            pipe.pipeline_functions.pop(idx_mask)
+        # 3. Remove mask preparation
+        pipe.pipeline_functions.pop(idx)
         
-        idx = find_index(pipe.pipeline_functions, "encode_prompt_fn")
+        # 2. Restore encode_prompt
         pipe.encode_prompt_fn = pipe.inner_encode_prompt_multiDiffusion
-        pipe.pipeline_functions[idx] = pipe.encode_prompt_fn
+        pipe.pipeline_functions[idx0] = pipe.encode_prompt_fn
+        del pipe.inner_encode_prompt_multiDiffusion
         
-        idx = find_index(pipe.pipeline_functions, "determine_batch_size_fn")
+        # 1. Restore batch size determination
         pipe.determine_batch_size_fn = pipe.inner_determine_batch_size_multiDiffusion
-        pipe.pipeline_functions[idx] = pipe.determine_batch_size_fn
+        pipe.pipeline_functions[idx00] = pipe.determine_batch_size_fn
+        del pipe.inner_determine_batch_size_multiDiffusion
+
     pipe.revert_functions.insert(0, remover_multiDiffusion)
 
 def determine_batch_size(self, **kwargs):
@@ -181,18 +183,8 @@ def get_noise_pred_multidiffusion(self, i: int, t: torch.Tensor, **kwargs):
                     kwargs['prompt_attention_mask'] = attn
         else:
             kwargs['prompt_embeds'] = orig_embeds
-        
-        result = self.inner_get_noise_pred_multiDiffusion(i, t, **kwargs)
-        if isinstance(result, dict):
-            if "noise_pred" not in result:
-                raise KeyError("Inner noise prediction did not return 'noise_pred'.")
-            kwargs["noise_pred"] = result["noise_pred"]
-        elif result is None:
-            raise KeyError("inner_get_noise_pred_multiDiffusion returned None; expected a noise prediction tensor.")
-        else:
-            kwargs["noise_pred"] = result
-        
-        kwargs = self.apply_guidance(i, t, **kwargs)
+        for i in self.multiDiffusionFunctions:
+            kwargs = i(i, t, **kwargs)
         current_pred = kwargs["noise_pred"]
         
         # IMPORTANT FIX: Use the latent input spatial dimensions as target.

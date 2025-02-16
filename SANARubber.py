@@ -24,13 +24,6 @@ from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 from diffusers.models import AutoencoderDC, SanaTransformer2DModel
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
-import os
-SAVE_LATENTS_DIR = "saved_latents_regular"
-os.makedirs(SAVE_LATENTS_DIR, exist_ok=True)
-def save_latent(latent, filename):
-    path = os.path.join(SAVE_LATENTS_DIR, filename)
-    torch.save(latent.cpu(), path)
-    print(f"Saved latent to {path}")
 
 def rescale_noise_cfg(noise_cfg, noise_pred_text, guidance_rescale=0.0):
     """
@@ -423,6 +416,5 @@ class SanaRubberPipeline(SanaPipeline):
         print("revert")
         for func in self.revert_functions:
             func()
-            print(func)
             del func
         self.revert_functions=[]

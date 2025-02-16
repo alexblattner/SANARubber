@@ -57,30 +57,31 @@ def apply_img2img(pipe):
     pipe.pipeline_functions[timesteps_index] = pipe.prepare_timesteps_fn
 
     def remover_img2img():
-        # Revert prepare_timesteps_fn replacement
+        # 6. Restore prepare_timesteps
         pipe.prepare_timesteps_fn = pipe.img2img_stored_prepare_timesteps_fn
         pipe.pipeline_functions[timesteps_index] = pipe.prepare_timesteps_fn
         delattr(pipe, "img2img_stored_prepare_timesteps_fn")
         
-        # Remove img2img_get_timesteps
+        # 5. Remove timesteps helper
         delattr(pipe, "img2img_get_timesteps")
         
-        # Remove the inserted img2img_preprocess_img
+        # 4. Remove preprocess_img
         pipe.pipeline_functions.pop(latent_index)
         
-        # Revert prepare_latents_fn replacement
+        # 3. Restore prepare_latents
         pipe.prepare_latents_fn = pipe.img2img_stored_prepare_latents_fn
         pipe.pipeline_functions[latent_index] = pipe.prepare_latents_fn
         delattr(pipe, "img2img_stored_prepare_latents_fn")
         
-        # Revert the check_inputs_fn replacement
+        # 2. Restore check_inputs
         pipe.check_inputs_fn = pipe.img2img_stored_check_inputs
         pipe.pipeline_functions[checker_index] = pipe.check_inputs_fn
         delattr(pipe, "img2img_stored_check_inputs")
         
-        # Remove the defaults function inserted at the beginning
+        # 1. Remove defaults from beginning
         pipe.pipeline_functions.pop(0)
         
+        # Cleanup final helper
         delattr(pipe, "img2img_prepare_latents")
     
     pipe.revert_functions.insert(0, remover_img2img)
